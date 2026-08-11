@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
           xmlns:tools="http://schemas.android.com/tools"
-          package="com.zegoggles.smssync"
           android:description="@string/app_description">
 
     <!-- “dangerous” permissions -->
@@ -78,6 +77,11 @@
 
     <!-- Apps wanting to use foreground services must now request the FOREGROUND_SERVICE permission first. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <!-- Android 14 (API 34) requires a typed foreground-service permission; backup/restore is a data sync. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+
+    <!-- Android 13 (API 33) requires runtime consent to post backup/restore progress notifications. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <uses-feature android:name="android.hardware.telephony" android:required="false"/>
     <uses-feature android:name="android.hardware.wifi" android:required="false"/>
@@ -92,7 +96,7 @@
                  android:allowBackup="true"
                  android:fullBackupContent="@xml/backup_descriptor">
 
-        <activity android:name=".activity.MainActivity" android:label="@string/app_name">
+        <activity android:name=".activity.MainActivity" android:label="@string/app_name" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -105,14 +109,14 @@
             The system creates the activity at the root of a new task and routes the intent to it.
             However, if an instance of the activity already exists, the system routes the intent to existing
             instance through a call to its onNewIntent() method, rather than creating a new one. -->
-        <activity android:name=".activity.auth.RedirectReceiverActivity" android:launchMode="singleTask">
+        <activity android:name=".activity.auth.RedirectReceiverActivity" android:launchMode="singleTask" android:exported="true">
             <!-- handle oauth browser callbacks (legacy auth support) -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <action android:name="android.intent.action.EXTERNAL_APPLICATIONS_AVAILABLE"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="com.zegoggles.smssync" android:path="/oauth2redirect"
+                <data android:scheme="sms.backup.plus" android:path="/oauth2redirect"
                       tools:ignore="GoogleAppIndexingUrlError"/>
             </intent-filter>
         </activity>
@@ -120,43 +124,42 @@
         <activity android:name=".activity.auth.AccountManagerAuthActivity"/>
         <activity android:name=".activity.donation.DonationActivity"/>
 
-        <service android:name=".service.SmsBackupService" android:exported="false"/>
-        <service android:name=".service.SmsRestoreService" android:exported="false"/>
-        <service android:name=".service.SmsJobService" android:exported="false">
-            <intent-filter>
-                <action android:name="com.firebase.jobdispatcher.ACTION_EXECUTE"/>
-            </intent-filter>
-        </service>
+        <service android:name=".service.SmsBackupService" android:exported="false"
+                 android:foregroundServiceType="dataSync"/>
+        <service android:name=".service.SmsRestoreService" android:exported="false"
+                 android:foregroundServiceType="dataSync"/>
 
         <receiver android:name=".receiver.SmsBroadcastReceiver"
                   android:enabled="true"
+                  android:exported="true"
                   android:permission="android.permission.BROADCAST_SMS">
             <intent-filter>
                 <action android:name="android.provider.Telephony.SMS_RECEIVED"/>
             </intent-filter>
         </receiver>
 
-        <receiver android:name=".receiver.BootReceiver" android:enabled="true">
+        <receiver android:name=".receiver.BootReceiver" android:enabled="true" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED"/>
             </intent-filter>
         </receiver>
 
-        <receiver android:name=".receiver.PackageReplacedReceiver" android:enabled="true">
+        <receiver android:name=".receiver.PackageReplacedReceiver" android:enabled="true" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
             </intent-filter>
         </receiver>
 
-        <receiver android:name=".receiver.BackupBroadcastReceiver" android:enabled="true" tools:ignore="ExportedReceiver">
+        <receiver android:name=".receiver.BackupBroadcastReceiver" android:enabled="true" android:exported="true" tools:ignore="ExportedReceiver">
             <intent-filter>
-                <action android:name="com.zegoggles.smssync.BACKUP"/>
+                <action android:name="sms.backup.plus.BACKUP"/>
                 <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
         </receiver>
 
         <!-- BroadcastReceiver that listens for incoming SMS messages -->
         <receiver android:name=".compat.SmsReceiver"
+                android:exported="true"
                 android:permission="android.permission.BROADCAST_SMS">
             <intent-filter>
                 <action android:name="android.provider.Telephony.SMS_DELIVER" />
@@ -165,6 +168,7 @@
 
         <!-- BroadcastReceiver that listens for incoming MMS messages -->
         <receiver android:name=".compat.MmsReceiver"
+            android:exported="true"
             android:permission="android.permission.BROADCAST_WAP_PUSH">
             <intent-filter>
                 <action android:name="android.provider.Telephony.WAP_PUSH_DELIVER" />
@@ -173,7 +177,7 @@
         </receiver>
 
         <!-- Activity that allows the user to send new SMS/MMS messages -->
-        <activity android:name=".compat.ComposeSmsActivity" >
+        <activity android:name=".compat.ComposeSmsActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <action android:name="android.intent.action.SENDTO" />
@@ -203,5 +207,18 @@
         <meta-data
             android:name="com.google.android.backup.api_key"
             android:value="@string/backup_api_key"/>
+
+        <!-- WorkManager is initialized on demand via App (Configuration.Provider),
+             so the default startup initializer is removed (WorkManager 2.6+). -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove"/>
+        </provider>
     </application>
 </manifest>
